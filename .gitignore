@@ -1,4 +1,5 @@
 .env
+.env.tpl
 data/
 results/
 __pycache__/

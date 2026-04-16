@@ -2,6 +2,9 @@
 
 First run fetches from the API and caches to SQLite as it goes.
 Subsequent runs only fetch new traces since the last cached timestamp.
+
+Each project has its own cache (see lib.config.ProjectConfig.cache_path)
+so traces from different Langfuse projects are never mixed.
 """
 
 import os
@@ -19,6 +22,7 @@ from lib.cache import (
     log_fetch,
     upsert_traces,
 )
+from lib.config import ProjectConfig
 
 # Rate limiting: Langfuse cloud allows ~100 req/min.
 # With page size 1000, we make far fewer requests.
@@ -29,32 +33,31 @@ RATE_LIMIT_BACKOFF_MAX = 120
 MAX_RETRIES = 5
 
 
-def get_client(
-    public_key_env: str = "LANGFUSE_PUBLIC_KEY",
-    secret_key_env: str = "LANGFUSE_SECRET_KEY",
-) -> Langfuse:
-    """Create a Langfuse client from env vars."""
+def get_client(config: ProjectConfig) -> Langfuse:
+    """Create a Langfuse client for the given project config."""
     return Langfuse(
-        public_key=os.getenv(public_key_env),
-        secret_key=os.getenv(secret_key_env),
-        host=os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com"),
+        public_key=config.public_key,
+        secret_key=config.secret_key,
+        host=config.host,
         timeout=120,
     )
 
 
 def get_traces(
     client: Langfuse,
+    config: ProjectConfig,
     *,
     from_timestamp: datetime | None = None,
     to_timestamp: datetime | None = None,
 ) -> list[dict]:
-    """Get traces for a time range, using cache + incremental API fetch.
+    """Get traces for a time range, using per-project cache + incremental API fetch.
 
     Caches each page as it's fetched so progress is never lost.
     """
-    conn = get_db()
+    conn = get_db(config.cache_path)
     stats = cache_stats(conn)
-    print(f"  Cache: {stats['total']} traces ({stats['earliest'] or 'empty'} to {stats['latest'] or 'empty'})")
+    print(f"  Project '{config.name}' cache ({config.cache_path}): "
+          f"{stats['total']} traces ({stats['earliest'] or 'empty'} to {stats['latest'] or 'empty'})")
 
     now = datetime.now(timezone.utc)
     to_ts = to_timestamp or now
@@ -71,7 +74,7 @@ def get_traces(
     # Fetch from API, caching each page as we go
     total_new = _fetch_and_cache(client, conn, from_timestamp=api_from, to_timestamp=to_ts)
     if total_new:
-        log_fetch(conn, project="", from_ts=str(api_from or ""), to_ts=to_ts.isoformat(), count=total_new)
+        log_fetch(conn, project=config.name, from_ts=str(api_from or ""), to_ts=to_ts.isoformat(), count=total_new)
         print(f"  Cached {total_new} new traces")
     else:
         print(f"  Cache is up to date")

@@ -26,6 +26,7 @@ from lib.classify import (
     extract_input_text,
     strip_file_upload_prefix,
 )
+from lib.config import get_project_config
 from lib.langfuse_client import get_client, get_traces, group_by_session, trace_url
 from lib.report import df_to_markdown_table, markdown_table, save_results
 
@@ -55,22 +56,21 @@ HISTORY_DAYS = 45
 
 def main():
     load_dotenv()
-    host = os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com")
+    config = get_project_config()
+    host = config.host
     include_internal = os.getenv("INCLUDE_INTERNAL", "").lower() in ("1", "true", "yes")
 
     now = datetime.now(timezone.utc)
     analysis_start = now - timedelta(days=ANALYSIS_DAYS)
     history_start = now - timedelta(days=HISTORY_DAYS)
 
-    client = get_client(
-        public_key_env="LANGFUSE_LABS_AGENT_PUBLIC_KEY",
-        secret_key_env="LANGFUSE_LABS_AGENT_SECRET_KEY",
-    )
+    print(f"Project: {config.name}")
+    client = get_client(config)
 
     # Step 1: Fetch the full history window to find first-ever sessions
     print(f"Fetching historical traces ({history_start.date()} to {now.date()}) "
           f"to identify first sessions...")
-    all_traces = get_traces(client, from_timestamp=history_start, to_timestamp=now)
+    all_traces = get_traces(client, config, from_timestamp=history_start, to_timestamp=now)
     all_sessions = group_by_session(all_traces)
     print(f"  {len(all_traces)} traces across {len(all_sessions)} sessions\n")
 
@@ -434,7 +434,7 @@ def main():
         }).to_dict(orient="records"),
     }
 
-    save_results("prompt_type", report_md, data)
+    save_results("prompt_type", report_md, data, project=config.name)
 
 
 if __name__ == "__main__":

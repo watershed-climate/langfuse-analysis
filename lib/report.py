@@ -43,11 +43,17 @@ def save_results(
     query_name: str,
     report_md: str,
     data_dict: dict,
+    project: str | None = None,
     results_dir: str = "results/",
 ) -> Path:
-    """Save timestamped report.md and data.json under results/{query_name}/{timestamp}/."""
+    """Save timestamped report.md and data.json.
+
+    Path: results/{query_name}/{project}/{timestamp}/ (if project given)
+          results/{query_name}/{timestamp}/            (legacy, no project)
+    """
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    out = Path(results_dir) / query_name / ts
+    base = Path(results_dir) / query_name
+    out = base / project / ts if project else base / ts
     out.mkdir(parents=True, exist_ok=True)
 
     (out / "report.md").write_text(report_md)
